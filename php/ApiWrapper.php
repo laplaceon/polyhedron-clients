@@ -11,12 +11,21 @@
 
 		private $context;
 		private $socket;
+		
+		// 3 second timeout
+		private $timeout = 3000;
 
 		function __construct() {
 			$context = new ZMQContext();
 			// use req instead of dealer since there's only one api server
 			$socket = $context->getSocket(ZMQ::SOCKET_REQ, 'apiconn');
+			// use dealer when manually handling cases of the central API being down
+			// $socket = $context->getSocket(ZMQ::SOCKET_DEALER, 'apiconn');
+			// discard unsent messages
+			$socket->setSockOpt(ZMQ::SOCKOPT_LINGER, 0);
+			$socket->setSockOpt(ZMQ::SOCKOPT_RCVTIMEO, $this->timeout);
 			$socket->connect($this->port);
+			// print_r($socket->getEndpoints());
 			$this->context = $context;
 			$this->socket = $socket;
 		}
@@ -36,20 +45,21 @@
 				'data' => $message,
 				'parameters' => $parameters
 			);
-			
+
 			$this->socket->send(json_encode($payload));
-			
-			// $timeStarted = time();
 			
 			// block until response received
 			while(true) {
 				$response = $this->socket->recv();
 				
+				// wait for timeout and send response or send error
 				if($response) {
 					break;
+				} else {
+					return json_decode(json_encode(array('status' => 'connecterr')));
 				}
 			}
 			
-			return $response;
+			return json_decode($response);
 		}
 	}
